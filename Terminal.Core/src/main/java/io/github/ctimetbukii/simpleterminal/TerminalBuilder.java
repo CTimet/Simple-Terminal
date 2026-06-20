@@ -1,0 +1,112 @@
+package io.github.ctimetbukii.simpleterminal;
+
+import lombok.NonNull;
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
+
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.concurrent.ExecutorService;
+
+public class TerminalBuilder {
+    private final TerminalOptions options = new TerminalOptions();
+
+    /**
+     * 获取一个 TerminalBuilder 对象。 与 'new TerminalBuilder()' 等价。<br/>
+     * @return TerminalBuilder 对象
+     */
+    @Contract(value = " -> new", pure = true)
+    public static @NotNull TerminalBuilder builder() {
+        return new TerminalBuilder();
+    }
+
+    /**
+     * 设置终端在另一个线程异步运行。默认为同步运行
+     * @return TerminalBuilder 实例
+     */
+    public TerminalBuilder runAsync() {
+        options.setRunAsync(true);
+        return this;
+    }
+
+    /**
+     * 设置终端执行的异步线程为守护线程。该设置仅当runAsync被调用后有效。默认为非守护线程。
+     * @return TerminalBuilder 实例
+     */
+    public TerminalBuilder asDamon() {
+        options.setDamon(true);
+        return this;
+    }
+
+    /**
+     * 设置终端执行的异步线程名。该设置仅当runAsync被调用后有效。默认为 CONSOLE
+     * @param name 端执行的异步线程名
+     * @return TerminalBuilder 实例
+     */
+    public TerminalBuilder setTerminalThreadName(String name) {
+        options.setTerminalThreadName(name);
+        return this;
+    }
+
+    /**
+     * 设置终端的输入流。默认为System.in。可以通过调用此方法重设输入流
+     * @param input 终端输入流
+     * @return TerminalBuilder 实例
+     */
+    public TerminalBuilder setTerminalInputStream(InputStream input) {
+        options.setInputStream(input);
+        return this;
+    }
+
+    /**
+     * 设置终端的输出流。默认为System.out。可以通过调用此方法重设输出流
+     * @param output 终端输出流
+     * @return TerminalBuilder 实例
+     */
+    public TerminalBuilder setTerminalOutputStream(OutputStream output) {
+        options.setOutputStream(output);
+        return this;
+    }
+
+    /**
+     * 若使用了runAsync，则检查ExecutorService值。若该值为null，则Simple-Terminal将new一个新的线程并在该线程内执行终端监听代码。
+     * 若该值不为null，则向该ExecutorService中submit终端监听代码。
+     * @param service ExecutorService 对象
+     * @return TerminalBuilder 对象
+     */
+    public TerminalBuilder setExecutorService(ExecutorService service) {
+        options.setRunExecutor(service);
+        return this;
+    }
+
+    /**
+     * 该方法用于设置用于锚定命令处理器的包路径。该方法必须被调用。更建议使用setAnchorPackageClassHelper方法传入一个用于锚定的类，这样在重构时更加方便。<br/>
+     * Simple-Terminal靠反射查找带有注解标记的方法或类，因此用于锚定命令处理器的包路径非常重要。<br/>
+     * 例如，若将带有CommandExecutorMethod的方法的类放在com.example下，则传入值应当为com.example。
+     * 这表明Simple-Terminal将从com.example包下开始扫描有无带有相关注解的类/方法。该值不得为null
+     * @param anchorPackagePath 用于锚定命令处理器的包路径。
+     */
+    public TerminalBuilder setAnchorPackagePath(@NonNull String anchorPackagePath) {
+        options.setAnchorPackagePath(anchorPackagePath);
+        return this;
+    }
+
+    /**
+     * 由于setAnchorPackagePath方法传入的是一个字符串值，若遇到重构，将类所在的包重命名或移动则还需要一并修改传入的值，较为麻烦。
+     * 该方法则使用锚定类的包路径，使得方法调用不受重构影响，更加方便。其他有关anchorPackagePath的内容参见#setAnchorPackagePath
+     * @param classHelper 用于锚定的类。类的内容不重要，但该类必须被放置在有命令注解的包下
+     * @return TerminalBuilder实例
+     */
+    public TerminalBuilder setAnchorPackageClassHelper(Class<?> classHelper) {
+        options.setAnchorPackagePath(classHelper.getPackage().getName());
+        return this;
+    }
+
+    /**
+     * 构造Terminal对象
+     * @return Terminal 对象
+     */
+    public Terminal build() {
+        return new Terminal(options);
+    }
+}
