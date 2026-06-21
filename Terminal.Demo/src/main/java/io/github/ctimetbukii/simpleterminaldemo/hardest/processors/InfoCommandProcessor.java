@@ -8,11 +8,23 @@ import io.github.ctimetbukii.simpleterminal.annotations.SubCommandExecutor;
 public class InfoCommandProcessor {
     @CommandExecutor
     public void info() {
-
+        System.out.println("'info command' called. method#info called.");
     }
 
+    /**
+     * 该方法将在执行 info cpu 时触发。其中info，cpu中的任何一个或多个字母换成大写仍然可以触发。
+     */
     @SubCommandExecutor("cpu")
     public void infoCpu() {
+        System.out.println("'info cpu' command called. method#infoCpu called.");
+    }
 
+    /**
+     * 该方法将在执行 info mem 时触发。其中info中的任何一个或多个字母换成大写仍然可以触发，
+     * 但mem必须为全小写形式，因为matchUpperAndLowerCase = false，此时必须按value中的形式严格匹配。
+     */
+    @SubCommandExecutor(value = "mem", matchUpperAndLowerCase = false)
+    public void infoMem() {
+        System.out.println("'info mem' command called. method#infoMem called.");
     }
 }

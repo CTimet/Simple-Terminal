@@ -1,14 +1,8 @@
 package io.github.ctimetbukii.simpleterminal;
 
-import io.github.ctimetbukii.simpleterminal.annotations.ArgsCastFatalExecutor;
-import io.github.ctimetbukii.simpleterminal.annotations.ArgsPatternsIllegalExecutor;
-import io.github.ctimetbukii.simpleterminal.annotations.CommandExecutor;
-import io.github.ctimetbukii.simpleterminal.exceptions.RepeatArgsCastFatalExecutorException;
-import io.github.ctimetbukii.simpleterminal.exceptions.RepeatArgsPatternsIllegalExecutor;
-import io.github.ctimetbukii.simpleterminal.exceptions.RepeatCommandExecutorException;
-import io.github.ctimetbukii.simpleterminal.process.NormalExecutor;
-import io.github.ctimetbukii.simpleterminal.process.PatternsIllegalExecutor;
-import io.github.ctimetbukii.simpleterminal.process.TypesIllegalExecutor;
+import io.github.ctimetbukii.simpleterminal.annotations.ContextCommandExecutor;
+import io.github.ctimetbukii.simpleterminal.exceptions.IllogicalPanicException;
+import io.github.ctimetbukii.simpleterminal.process.CommandHandler;
 import lombok.Getter;
 import io.github.ctimetbukii.simpleterminal.annotations.CommandProcessor;
 import org.reflections.Reflections;
@@ -17,10 +11,7 @@ import org.reflections.scanners.TypeAnnotationsScanner;
 import org.reflections.util.ConfigurationBuilder;
 
 import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Scanner;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Future;
 
 public class Terminal {
@@ -38,14 +29,23 @@ public class Terminal {
      */
     private String contextCommand = null;
 
-    //命令处理器
-    private HashMap<String, NormalExecutor> commandExecutors = new HashMap<>();
+    /*
+     * 当前上下文使用的输入次数。当contextCommand = null时，该值应当为-1。代表当下不存在上下文。
+     * 若存在上下文，则此处的值应当与ContextCommandExecutor中标记的stage值一样。
+     * 根据该值匹配stage
+     */
+    private int contextTimes = -1;
 
-    //参数格式错误的命令处理器
-    private HashMap<String, PatternsIllegalExecutor> patternsIllegalExecutors = new HashMap<>();
-
-    //参数类型错误的命令处理器
-    private HashMap<String, TypesIllegalExecutor> typesIllegalExecutors = new HashMap<>();
+    //严格匹配的命令处理器。存放那些@CommandProcessor(matchUpperAndLowerCase=false)的命令处理器
+    private final HashMap<String, CommandHandler> strictMatchCommandHandlers = new HashMap<>();
+    //非严格匹配的命令处理器
+    private final HashMap<String, CommandHandler> easeMatchCommandHandlers = new HashMap<>();
+    //带有上下文的需要严格匹配的指令集
+    private final HashSet<String> strictMatchCommandsWithContext = new HashSet<>();
+    //带有上下文的非严格匹配指令集
+    private final HashSet<String> easeMatchCommandsWithContext = new HashSet<>(); //这两个HashSet不能合并，否则匹配时可能导致由于要求严格匹配的指令被输入了含错误大小写的指令而错误地启用了上下文
+    //上下文长度记录
+    private final HashMap<String, Integer> contextLengthMap = new HashMap<>();
 
     public Terminal() {
         this(new TerminalOptions());
@@ -65,37 +65,40 @@ public class Terminal {
                 .setScanners(new TypeAnnotationsScanner(), new MethodAnnotationsScanner()));
         Set<Class<?>> commandProcessors = reflections.getTypesAnnotatedWith(CommandProcessor.class);
 
-        //从这些类中扫描CommandExecutor
+        //注册命令处理器
         commandProcessors.forEach(cls -> {
-            String command = cls.getAnnotation(CommandProcessor.class).value();
+            CommandProcessor processorAnn = cls.getAnnotation(CommandProcessor.class);
             Method[] methods = cls.getMethods();
-            for (Method method : methods) {
-                if (method.isAnnotationPresent(CommandExecutor.class)) {
-                    //注册该类的命令处理器。
-                    if (commandExecutors.containsKey(command)) {
-                        //命令处理器已经被注册过，说明是重复注册，代表一个类中注册了两个CommandExecutor，抛出异常
-                        throw new RepeatCommandExecutorException(cls);
-                    }
-                    commandExecutors.put(command, new NormalExecutor(method));
-                    continue;
+            int contextLength;
+
+            if (processorAnn.hasContext()) {
+                Optional<Method> maxContextExecutor =  Arrays.stream(methods).filter(method -> method.isAnnotationPresent(ContextCommandExecutor.class))
+                        .max(Comparator.comparingInt(m -> m.getAnnotation(ContextCommandExecutor.class).stage()));
+                if (maxContextExecutor.isPresent()) {
+                    contextLength = maxContextExecutor.get().getAnnotation(ContextCommandExecutor.class).stage();
+                } else {
+                    throw new IllogicalPanicException("A CommandProcessor with context has not ContextCommandExecutor.");
                 }
-                if (method.isAnnotationPresent(ArgsCastFatalExecutor.class)) {
-                    if (typesIllegalExecutors.containsKey(command)) {
-                        throw new RepeatArgsCastFatalExecutorException(cls);
-                    }
-                    typesIllegalExecutors.put(command, new TypesIllegalExecutor(method));
-                    continue;
-                }
-                if (method.isAnnotationPresent(ArgsPatternsIllegalExecutor.class)) {
-                    if (patternsIllegalExecutors.containsKey(command)) {
-                        throw new RepeatArgsPatternsIllegalExecutor(cls);
-                    }
-                    patternsIllegalExecutors.put(command, new PatternsIllegalExecutor(method));
-                    //continue; //no need to continue
+            } else {
+                contextLength = 0;
+            }
+
+            contextLengthMap.put(processorAnn.value().toLowerCase(), contextLength);
+
+            if (processorAnn.matchUpperAndLowerCase()) {
+                easeMatchCommandHandlers.put(processorAnn.value().toLowerCase(), new CommandHandler(cls, contextLength));
+            } else {
+                strictMatchCommandHandlers.put(processorAnn.value(), new CommandHandler(cls, contextLength));
+            }
+            //处理含有上下文的指令
+            if (processorAnn.hasContext()) {
+                if (processorAnn.matchUpperAndLowerCase()) {
+                    easeMatchCommandsWithContext.add(processorAnn.value());
+                } else {
+                    strictMatchCommandsWithContext.add(processorAnn.value());
                 }
             }
         });
-
 
         if (options.isRunAsync()) {
             if (options.getRunExecutor() == null) {
@@ -113,14 +116,50 @@ public class Terminal {
         try (Scanner scanner = new Scanner(options.getInputStream())){
             while (run && !Thread.currentThread().isInterrupted() && scanner.hasNextLine()) {
                 String[] inputs = scanner.nextLine().split(" ");
+
+                //检查当前是否存在上下文指令
+                if (contextCommand != null) {
+                    //存在上下文，检查当前已经使用的上下文输入次数
+                    if (contextTimes != contextLengthMap.get(contextCommand)) {
+                        //上下文次数没有达到记录的最大上下文次数。说明当前仍然存在于上下文环境中。
+                        //走上下文指令处理器
+                        //检查命令是否存在
+                        if (strictMatchCommandHandlers.containsKey(contextCommand)) {
+                            strictMatchCommandHandlers.get(contextCommand).accept(inputs, contextTimes); //走上下文时，整个输入被传入当作参数
+                        } else if (easeMatchCommandHandlers.containsKey(contextCommand.toLowerCase())) {
+                            easeMatchCommandHandlers.get(contextCommand.toLowerCase()).accept(inputs, contextTimes);
+                        } else {
+                            //命令不存在
+                            //上下文指令不应该不存在。此处出现无法调和的异常
+                            throw new IllogicalPanicException("ContextCommand doesn't exists while 'contextCommand' field is NOT null!");
+                        }
+                        contextTimes ++;
+                    } else {
+                        //上下文次数已经达到记录的最大次数。证明此时已经完成上下文命令的上下文。我们清空上下文
+                        contextTimes = -1;
+                        contextCommand = null;
+                        //跳出if块，让剩余代码继续正常执行。
+                    }
+                }
+
                 //拿到顶部命令
                 String topCommand = inputs[0];
+                String[] args = Arrays.copyOfRange(inputs, 1, inputs.length);
+                //若命令含有上下文，则设置好。该操作必须在命令执行之前，因为我们要用这个contextTimes去匹配stage
+                if (strictMatchCommandsWithContext.contains(topCommand)) {
+                    contextCommand = topCommand;
+                    contextTimes ++; //默认是-1，加1后为0，刚好匹配stage=0，代表初次指令输入
+                } else if (easeMatchCommandsWithContext.contains(topCommand.toLowerCase())) {
+                    contextCommand = topCommand;
+                    contextTimes ++;
+                }
                 //检查命令是否存在
-                if (commandExecutors.containsKey(topCommand)) {
-                    //命令存在，把参数传入commandExecutor处理
-                    commandExecutors.get(topCommand).accept(Arrays.copyOfRange(inputs, 1, inputs.length));
+                if (strictMatchCommandHandlers.containsKey(topCommand)) {
+                    strictMatchCommandHandlers.get(topCommand).accept(args, contextTimes);
+                } else if (easeMatchCommandHandlers.containsKey(topCommand.toLowerCase())) {
+                    easeMatchCommandHandlers.get(topCommand.toLowerCase()).accept(args, contextTimes);
                 } else {
-                    //命令不存在，传入commandDoesn'tExistProcessor处理
+                    //命令不存在
                     options.getCommandDoesntExistProcessor().accept(topCommand);
                 }
             }
