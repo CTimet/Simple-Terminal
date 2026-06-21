@@ -7,6 +7,7 @@ import org.jetbrains.annotations.NotNull;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
+import java.util.function.Consumer;
 
 public class TerminalBuilder {
     private final TerminalOptions options = new TerminalOptions();
@@ -99,6 +100,16 @@ public class TerminalBuilder {
      */
     public TerminalBuilder setAnchorPackageClassHelper(Class<?> classHelper) {
         options.setAnchorPackagePath(classHelper.getPackage().getName());
+        return this;
+    }
+
+    /**
+     * 设置命令不存在时的命令处理器。当输入的命令不存在时，调用传入的processor，并将命令传入该processor的accept方法。
+     * @param processor 命令不存在时的命令处理器
+     * @return TerminalBuilder 实例
+     */
+    public TerminalBuilder setCommandDoesntExistProcessor(Consumer<String> processor) {
+        options.setCommandDoesntExistProcessor(processor);
         return this;
     }
 

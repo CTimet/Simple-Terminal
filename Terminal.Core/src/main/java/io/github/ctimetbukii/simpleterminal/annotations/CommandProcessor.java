@@ -17,7 +17,9 @@ public @interface CommandProcessor {
     String value();
 
     /**
-     * 是否含有子命令。若该值为true，则patterns与types值被放弃，传入的第一个参数被视为子命令，剩余参数传入子命令的处理器。
+     * 同时匹配大写指令和小写指令。默认为true。 <br/>
+     * 例如，该值为true时，mycommand，MYCOMMAND，MyCommand，mYCOMMand等都会被@CommandProcessor("mycommand")匹配。
+     * 为false时则只有mycommand能被匹配
      */
-    boolean hasSubCommand();
+    boolean matchUpperAndLowerCase() default true;
 }

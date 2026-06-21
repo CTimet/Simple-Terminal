@@ -4,9 +4,11 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
+import java.util.function.Consumer;
 
 public class TerminalOptions {
     /**
@@ -60,4 +62,18 @@ public class TerminalOptions {
     @Setter
     @NonNull
     private String anchorPackagePath;
+
+    /**
+     * 当命令不存在时处理不存在的命令。
+     */
+    @Getter
+    @Setter
+    private Consumer<String> commandDoesntExistProcessor = cmd -> {
+        byte[] warningBytes = ("Command '" + cmd + "' doesn't exists.").getBytes();
+        try {
+            getOutputStream().write(warningBytes);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    };
 }
